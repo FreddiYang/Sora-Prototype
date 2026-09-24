@@ -1,0 +1,6 @@
+{
+  "name": "Atelier Spatial",
+  "description": "Transform empty rooms into personalized, purchasable interior designs with custom solid wood furniture, spatial models, and fabrication drawing packages.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
