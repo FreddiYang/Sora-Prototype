@@ -68,6 +68,18 @@ export const InteractiveRoomCanvas: React.FC<InteractiveRoomCanvasProps> = ({
             alt={design.title}
             className="w-full h-full object-cover transition-transform duration-700 ease-out"
             referrerPolicy="no-referrer"
+            onError={(e) => {
+              const target = e.currentTarget;
+              const fallbackMap: Record<string, string> = {
+                'design-scandi-oak': '/assets/images/room_render_scandi_warm_1790211994944.jpg',
+                'design-japandi-walnut': '/assets/images/room_render_japandi_walnut_1790212005558.jpg',
+                'design-nordic-ash': '/assets/images/room_render_nordic_minimal_1790212016769.jpg',
+              };
+              const fb = fallbackMap[design.id] || '/assets/images/room_render_scandi_warm_1790211994944.jpg';
+              if (!target.src.endsWith(fb)) {
+                target.src = fb;
+              }
+            }}
           />
 
           {/* Interactive Hotspot Overlays: Furniture */}

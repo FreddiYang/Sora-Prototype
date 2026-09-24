@@ -1,4 +1,7 @@
 import { Project, MaterialProduct, DesignAlternative, FurnitureObject, SurfaceFinish } from '../types';
+import scandiRenderImg from '../assets/images/room_render_scandi_warm_1790211994944.jpg';
+import japandiRenderImg from '../assets/images/room_render_japandi_walnut_1790212005558.jpg';
+import nordicRenderImg from '../assets/images/room_render_nordic_minimal_1790212016769.jpg';
 
 export const CATALOG_MATERIALS: MaterialProduct[] = [
   // Flooring
@@ -292,7 +295,7 @@ export const INITIAL_DESIGNS: DesignAlternative[] = [
     title: 'Warm Scandi & Rift White Oak',
     tagline: 'Quiet warmth, architectural craft, and luminous natural daylight',
     styleArchetype: 'Scandinavian Craft & Modern Minimalist',
-    renderImageUrl: '/src/assets/images/room_render_scandi_warm_1790211994944.jpg',
+    renderImageUrl: scandiRenderImg,
     narrative: 'Anchored by a bespoke 8-person solid white oak trestle dining table, this composition embraces calm Nordic craftsmanship. Generous 40" circulation paths allow seamless flow between the entryway and the garden patio doors. Limewash walls softly diffuse morning sun, while wide-plank oak flooring ties the spatial envelope into an organic whole.',
     woodSpecies: 'Select American White Oak',
     finishType: 'Rubio Monocoat Pure (Matte Hardwax)',
@@ -407,7 +410,7 @@ export const INITIAL_DESIGNS: DesignAlternative[] = [
     title: 'Japandi Discipline & Black Walnut',
     tagline: 'Deep walnut grain, tactile stone, and meditative spatial balance',
     styleArchetype: 'Japandi & Architectural Wabi-Sabi',
-    renderImageUrl: '/src/assets/images/room_render_japandi_walnut_1790212005558.jpg',
+    renderImageUrl: japandiRenderImg,
     narrative: 'Drawing inspiration from traditional Kyoto joinery and contemporary California minimalism, this composition centers around rich American Black Walnut with prominent through-tenon trestle legs. Honed travertine tile flooring provides earthy grounding, while acoustic Roman Clay walls dampen ambient chatter during dinner parties.',
     woodSpecies: 'American Black Walnut (Juglans nigra)',
     finishType: 'Rubio Monocoat Pure (Low-Sheen Natural Oil)',
@@ -515,7 +518,7 @@ export const INITIAL_DESIGNS: DesignAlternative[] = [
     title: 'Nordic Minimal & Blonde Ash',
     tagline: 'Airy simplicity, refined tapered proportions, and soft brightness',
     styleArchetype: 'Pure Nordic Minimalist',
-    renderImageUrl: '/src/assets/images/room_render_nordic_minimal_1790212016769.jpg',
+    renderImageUrl: nordicRenderImg,
     narrative: 'Conceived for optimal daylight reflection and flexible daily family living. A clean-lined ash table with round-tapered legs is paired with classic Scandinavian paper cord seating. Pale micro-cement flooring creates seamless architectural continuity with adjacent kitchen countertops.',
     woodSpecies: 'Blonde White Ash & Birch',
     finishType: 'Nordic Soap White Oil (Ultramatte)',
