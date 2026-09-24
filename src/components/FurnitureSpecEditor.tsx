@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { FurnitureObject, FurnitureSpecification } from '../types';
 import { 
+  generateTableBOM, 
+  generateCredenzaBOM, 
+  calculateFurniturePrice, 
+  calculateWoodMovement, 
+  getWoodProperty 
+} from '../utils/furnitureCalculations';
+import { 
   Ruler, 
   Layers, 
   Hammer, 
@@ -9,7 +16,8 @@ import {
   FileText, 
   ChevronRight,
   Sparkles,
-  Info
+  Info,
+  RotateCcw
 } from 'lucide-react';
 
 interface FurnitureSpecEditorProps {
@@ -48,11 +56,55 @@ export const FurnitureSpecEditor: React.FC<FurnitureSpecEditorProps> = ({
   const [joineryMethod, setJoineryMethod] = useState(spec.joineryMethod);
   const [seatingCapacity, setSeatingCapacity] = useState(spec.seatingCapacity);
   const [expansionHardware, setExpansionHardware] = useState(spec.expansionHardware);
+  
+  // Homeowner prioritized decisions
+  const [edgeShape, setEdgeShape] = useState<string>('Soft Beveled Chamfer Edge (45° under-bevel)');
+  const [deliveryMethod, setDeliveryMethod] = useState<'flat_pack' | 'assembled'>('flat_pack');
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const [lastChangeSummary, setLastChangeSummary] = useState<string | null>(null);
+
+  // History state for Undo
+  const [history, setHistory] = useState<FurnitureSpecification[]>([]);
+
+  // Sync state if furniture prop changes
+  React.useEffect(() => {
+    setLengthMm(spec.overallLengthMm);
+    setWidthMm(spec.overallWidthMm);
+    setHeightMm(spec.overallHeightMm);
+    setTopThicknessMm(spec.topThicknessMm);
+    setWoodSpecies(spec.woodSpecies);
+    setFinishType(spec.finishType);
+    setJoineryMethod(spec.joineryMethod);
+    setSeatingCapacity(spec.seatingCapacity);
+    setExpansionHardware(spec.expansionHardware);
+  }, [furniture.id]);
 
   // Dynamic recalculations
+  const woodProp = getWoodProperty(woodSpecies);
+  const woodMovement = calculateWoodMovement(woodSpecies, widthMm);
+
   const estimatedBoardFeet = Math.round(((lengthMm / 25.4) * (widthMm / 25.4) * (topThicknessMm / 25.4)) / 144 * 2.2); // with 120% waste factor
-  const calculatedCost = Math.round(1800 + (lengthMm * 0.9) + (topThicknessMm * 25) + (woodSpecies.includes('Walnut') ? 900 : 0));
+
+  // Generate dynamic BOM preview for current form state
+  const currentBOM = furniture.category === 'credenza'
+    ? generateCredenzaBOM({
+        ...spec,
+        overallLengthMm: lengthMm,
+        overallWidthMm: widthMm,
+        overallHeightMm: heightMm,
+        topThicknessMm,
+        woodSpecies,
+      }, woodSpecies)
+    : generateTableBOM({
+        ...spec,
+        overallLengthMm: lengthMm,
+        overallWidthMm: widthMm,
+        overallHeightMm: heightMm,
+        topThicknessMm,
+        woodSpecies,
+      }, woodSpecies);
+
+  const calculatedCost = calculateFurniturePrice(currentBOM, furniture.category);
 
   const woodOptions = [
     { name: 'Select American White Oak (Quercus alba)', tag: 'Durable, prominent medullary rays, neutral warm tone' },
@@ -76,6 +128,9 @@ export const FurnitureSpecEditor: React.FC<FurnitureSpecEditorProps> = ({
   ];
 
   const handleSave = () => {
+    // Push current spec to undo history
+    setHistory((prev) => [...prev, spec]);
+
     const updatedSpec: FurnitureSpecification = {
       ...spec,
       overallLengthMm: lengthMm,
@@ -89,17 +144,106 @@ export const FurnitureSpecEditor: React.FC<FurnitureSpecEditorProps> = ({
       expansionHardware,
     };
 
+    const newBOM = furniture.category === 'credenza'
+      ? generateCredenzaBOM(updatedSpec, woodSpecies)
+      : generateTableBOM(updatedSpec, woodSpecies);
+
+    const newPrice = calculateFurniturePrice(newBOM, furniture.category);
+
+    const hasSpecChanged =
+      spec.overallLengthMm !== lengthMm ||
+      spec.overallWidthMm !== widthMm ||
+      spec.overallHeightMm !== heightMm ||
+      spec.woodSpecies !== woodSpecies ||
+      spec.topThicknessMm !== topThicknessMm;
+
+    let updatedDrawingPackage = furniture.drawingPackage;
+    if (updatedDrawingPackage) {
+      const prevRev = updatedDrawingPackage.revision || 'Rev A';
+      const revLetter = prevRev.replace('Rev', '').trim();
+      const nextChar = String.fromCharCode(revLetter.charCodeAt(0) + 1);
+      const nextRev = hasSpecChanged ? `Rev ${nextChar}` : prevRev;
+
+      const changeNote = `Respecified to ${lengthMm}×${widthMm}×${heightMm}mm in ${woodSpecies}`;
+      const updatedHistory = [
+        ...(updatedDrawingPackage.revisionHistory || []),
+        ...(hasSpecChanged ? [{
+          revision: nextRev,
+          date: new Date().toISOString().split('T')[0],
+          changeNote,
+          author: 'Specification Editor',
+        }] : []),
+      ];
+
+      updatedDrawingPackage = {
+        ...updatedDrawingPackage,
+        status: hasSpecChanged ? 'concept_draft' : updatedDrawingPackage.status,
+        packageType: hasSpecChanged ? 'concept_package' : updatedDrawingPackage.packageType,
+        isApprovalInvalidated: hasSpecChanged && (updatedDrawingPackage.packageType === 'manufacturing_package' || updatedDrawingPackage.status === 'approved_for_manufacturing'),
+        invalidationReason: hasSpecChanged
+          ? `Specification edited after approval: Dimensions updated to ${lengthMm}×${widthMm}mm, species: ${woodSpecies}. Re-approval required.`
+          : undefined,
+        approvedBy: hasSpecChanged ? undefined : updatedDrawingPackage.approvedBy,
+        approvedDate: hasSpecChanged ? undefined : updatedDrawingPackage.approvedDate,
+        reviewerSignOff: hasSpecChanged ? undefined : updatedDrawingPackage.reviewerSignOff,
+        revision: nextRev,
+        drawnDate: new Date().toISOString().split('T')[0],
+        bom: newBOM,
+        revisionHistory: updatedHistory,
+      };
+    }
+
     const updatedFurniture: FurnitureObject = {
       ...furniture,
-      estimatedPrice: calculatedCost,
+      estimatedPrice: newPrice,
       materialSummary: `${woodSpecies}, ${finishType}`,
       dimensionsSummary: `${lengthMm} mm L x ${widthMm} mm W x ${heightMm} mm H (${(lengthMm/25.4).toFixed(1)}" x ${(widthMm/25.4).toFixed(1)}" x ${(heightMm/25.4).toFixed(1)}")`,
       specification: updatedSpec,
+      drawingPackage: updatedDrawingPackage,
     };
 
     onUpdateFurniture(updatedFurniture);
+    setLastChangeSummary(`Updated ${furniture.name} to ${lengthMm}×${widthMm}mm (${woodSpecies.split('(')[0].trim()}). Drawing package regenerated at ${updatedDrawingPackage?.revision || 'Rev A'} — Document status set to Concept Draft.`);
     setShowSavedToast(true);
-    setTimeout(() => setShowSavedToast(false), 2500);
+    setTimeout(() => setShowSavedToast(false), 4000);
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const previousSpec = history[history.length - 1];
+    setHistory(history.slice(0, -1));
+
+    setLengthMm(previousSpec.overallLengthMm);
+    setWidthMm(previousSpec.overallWidthMm);
+    setHeightMm(previousSpec.overallHeightMm);
+    setTopThicknessMm(previousSpec.topThicknessMm);
+    setWoodSpecies(previousSpec.woodSpecies);
+    setFinishType(previousSpec.finishType);
+    setJoineryMethod(previousSpec.joineryMethod);
+    setSeatingCapacity(previousSpec.seatingCapacity);
+
+    const revertedBOM = furniture.category === 'credenza'
+      ? generateCredenzaBOM(previousSpec, previousSpec.woodSpecies)
+      : generateTableBOM(previousSpec, previousSpec.woodSpecies);
+
+    const revertedPrice = calculateFurniturePrice(revertedBOM, furniture.category);
+
+    const revertedFurniture: FurnitureObject = {
+      ...furniture,
+      estimatedPrice: revertedPrice,
+      materialSummary: `${previousSpec.woodSpecies}, ${previousSpec.finishType}`,
+      dimensionsSummary: `${previousSpec.overallLengthMm} mm L x ${previousSpec.overallWidthMm} mm W x ${previousSpec.overallHeightMm} mm H`,
+      specification: previousSpec,
+      drawingPackage: furniture.drawingPackage ? {
+        ...furniture.drawingPackage,
+        bom: revertedBOM,
+      } : undefined,
+    };
+
+    onUpdateFurniture(revertedFurniture);
+    setLastChangeSummary('Reverted last edit. Prior dimensions and wood specifications restored.');
+    setShowSavedToast(true);
+    setTimeout(() => setShowSavedToast(false), 3000);
   };
 
   return (
@@ -114,21 +258,48 @@ export const FurnitureSpecEditor: React.FC<FurnitureSpecEditorProps> = ({
             Custom Furniture Specification Editor
           </h1>
           <p className="text-sm text-[#5E5C56] mt-1.5 max-w-2xl">
-            Translate 3D visual intent into verified woodworking parameters: timber species, cross-grain movement allowances, mortise & tenon joinery, and manufacturer review criteria.
+            Configure homeowner priorities: dimensions, wood species, edge profiles, and maintenance expectations. Joinery and seasonal movement defaults are pre-engineered.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
+          {history.length > 0 && (
+            <button
+              onClick={handleUndo}
+              className="px-3.5 py-2 bg-[#FAF9F6] hover:bg-[#EFECE6] text-[#1E1E1C] border border-[#DDD7C8] text-xs font-medium rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Undo last modification"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Undo Last Edit</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenDrawingPackage}
-            className="px-4 py-2.5 bg-[#2C2A29] hover:bg-[#1E1E1C] text-white text-xs font-medium rounded shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer"
+            className="px-4 py-2 bg-[#2C2A29] hover:bg-[#1E1E1C] text-white text-xs font-medium rounded shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer"
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Generate Fabrication Drawings & BOM</span>
+            <span>View Drawing Package & BOM</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
+
+      {/* Change Summary Notification */}
+      {lastChangeSummary && (
+        <div className="p-3.5 bg-[#FAF8F5] border border-[#E0D7C6] rounded-lg text-xs text-[#5C4033] flex items-center justify-between animate-fade-in">
+          <div className="flex items-center gap-2">
+            <Info className="w-4 h-4 text-[#8C5835] shrink-0" />
+            <span>{lastChangeSummary}</span>
+          </div>
+          <button
+            onClick={() => setLastChangeSummary(null)}
+            className="text-[#8C887B] hover:text-[#1E1E1C] font-semibold text-xs ml-3"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Main Grid: Form Left + Live Preview / Calculation Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -281,25 +452,109 @@ export const FurnitureSpecEditor: React.FC<FurnitureSpecEditorProps> = ({
             </div>
           </div>
 
-          {/* Finish Schedule & Joinery Method */}
-          <div className="bg-white rounded-lg border border-[#E8E6DF] p-6 shadow-xs space-y-5">
+          {/* Finish Schedule & Maintenance Expectations */}
+          <div className="bg-white rounded-lg border border-[#E8E6DF] p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-[#F0EDE6]">
               <div className="flex items-center gap-2">
-                <Hammer className="w-4 h-4 text-[#5C4033]" />
+                <Sparkles className="w-4 h-4 text-[#5C4033]" />
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-[#1E1E1C]">
-                  Joinery Architecture & Hardware Schedule
+                  Finish Preferences & Maintenance Expectations
                 </h3>
               </div>
+              <span className="text-[11px] text-[#706E66]">Tactile profile & care level</span>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5">
+              {finishOptions.map((f, idx) => {
+                const isSelected = finishType.includes(f.name.split('(')[0].trim());
+                return (
+                  <label
+                    key={idx}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-[#2C2A29] bg-[#FAF8F5]'
+                        : 'border-[#EDE9DF] hover:bg-[#FAF9F6]'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="finishType"
+                      checked={isSelected}
+                      onChange={() => setFinishType(f.name)}
+                      className="mt-1 text-[#2C2A29] focus:ring-[#2C2A29]"
+                    />
+                    <div className="flex-1">
+                      <div className="text-xs font-semibold text-[#1E1E1C]">{f.name}</div>
+                      <div className="text-[11px] text-[#706E66] mt-0.5">{f.desc}</div>
+                      <div className="text-[10px] text-[#8C887B] mt-1 font-mono">
+                        Maintenance: {idx === 3 ? 'Ultra-low (wipe clean with damp cloth)' : idx === 2 ? 'Monthly gentle castile soap conditioning' : 'Bi-annual refresh oil buffing'}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Edge Shape & Delivery Configuration (Homeowner Decisions) */}
+          <div className="bg-white rounded-lg border border-[#E8E6DF] p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#F0EDE6]">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#1E1E1C]">
+                Table Edge Profile & Delivery Configuration
+              </h3>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#2C2A29]">Tabletop Edge Profile</label>
+                <select
+                  value={edgeShape}
+                  onChange={(e) => setEdgeShape(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-[#FAF9F6] border border-[#DDD7C8] rounded focus:border-[#2C2A29] focus:outline-none"
+                >
+                  <option value="Soft Beveled Chamfer Edge (45° under-bevel)">Soft Chamfer Bevel (Tactile & slender appearance)</option>
+                  <option value="Square Architectural Minimalist (Eased 3mm)">Square Eased (Architectural modern geometry)</option>
+                  <option value="Half-Bullnose Organic Radius">Half-Bullnose (Child-friendly rounded edge)</option>
+                  <option value="Undercut Swiss Knife-Edge">Undercut Knife Edge (Floating visual effect)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[#2C2A29]">Delivery & Ingress Handling</label>
+                <select
+                  value={deliveryMethod}
+                  onChange={(e) => setDeliveryMethod(e.target.value as any)}
+                  className="w-full px-3 py-2 text-xs bg-[#FAF9F6] border border-[#DDD7C8] rounded focus:border-[#2C2A29] focus:outline-none"
+                >
+                  <option value="flat_pack">Knock-Down (Tabletop flat with legs unbolted · Fits all standard doors)</option>
+                  <option value="assembled">Fully Assembled White-Glove (Requires 950mm doorway clearance)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Expandable Technical Details (Joinery & Movement Engineering) */}
+          <details className="bg-white rounded-lg border border-[#E8E6DF] p-5 shadow-xs group">
+            <summary className="text-xs font-semibold uppercase tracking-wider text-[#1E1E1C] cursor-pointer list-none flex items-center justify-between select-none">
+              <span className="flex items-center gap-2">
+                <Hammer className="w-4 h-4 text-[#5C4033]" />
+                <span>Technical Details & Joinery Engineering (Manufacturer Reviewed)</span>
+              </span>
+              <span className="text-[#8C887B] text-xs font-normal group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+
+            <div className="pt-4 space-y-4 border-t border-[#F0EDE6] mt-4 text-xs">
+              <p className="text-[#706E66]">
+                These parameters use verified master-woodworker defaults. Changes will be audited during the manufacturer review step:
+              </p>
+
               <div>
-                <label className="text-xs font-medium text-[#2C2A29] block mb-1.5">Proposed Structural Joinery</label>
+                <label className="text-xs font-medium text-[#2C2A29] block mb-1.5">Joinery Architecture</label>
                 <div className="space-y-2">
                   {joineryOptions.map((j, idx) => (
                     <label
                       key={idx}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      className={`flex items-start gap-3 p-2.5 rounded border cursor-pointer ${
                         joineryMethod === j.name
                           ? 'border-[#2C2A29] bg-[#FAF8F5]'
                           : 'border-[#EDE9DF] hover:bg-[#FAF9F6]'
@@ -310,61 +565,44 @@ export const FurnitureSpecEditor: React.FC<FurnitureSpecEditorProps> = ({
                         name="joineryMethod"
                         checked={joineryMethod === j.name}
                         onChange={() => setJoineryMethod(j.name)}
-                        className="mt-1 text-[#2C2A29] focus:ring-[#2C2A29]"
+                        className="mt-1 text-[#2C2A29]"
                       />
                       <div>
-                        <div className="text-xs font-semibold text-[#1E1E1C]">{j.name}</div>
-                        <div className="text-[11px] text-[#706E66] mt-0.5">{j.desc}</div>
+                        <div className="font-semibold text-[#1E1E1C]">{j.name}</div>
+                        <div className="text-[11px] text-[#706E66]">{j.desc}</div>
                       </div>
                     </label>
                   ))}
                 </div>
               </div>
 
-              <div className="pt-2">
-                <label className="text-xs font-medium text-[#2C2A29] block mb-1.5">Protective Finish Schedule</label>
-                <select
-                  value={finishType}
-                  onChange={(e) => setFinishType(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-[#FAF9F6] border border-[#DDD7C8] rounded focus:border-[#2C2A29] focus:outline-none"
-                >
-                  {finishOptions.map((f, idx) => (
-                    <option key={idx} value={f.name}>
-                      {f.name} — {f.desc}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-2">
-                <label className="text-xs font-medium text-[#2C2A29] block mb-1.5">Tabletop Expansion Fasteners</label>
+              <div>
+                <label className="text-xs font-medium text-[#2C2A29] block mb-1">Seasonal Expansion Hardware</label>
                 <input
                   type="text"
                   value={expansionHardware}
                   onChange={(e) => setExpansionHardware(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-[#FAF9F6] border border-[#DDD7C8] rounded focus:border-[#2C2A29] focus:outline-none"
+                  className="w-full px-3 py-1.5 bg-[#FAF9F6] border border-[#DDD7C8] rounded font-mono text-xs"
                 />
-                <span className="text-[11px] text-[#8C887B] mt-1 block">
-                  Crucial: Prevents tabletop splits caused by seasonal humidity fluctuations in the room.
-                </span>
               </div>
             </div>
+          </details>
 
-            <div className="pt-3 border-t border-[#F0EDE6] flex items-center justify-between">
-              <button
-                onClick={handleSave}
-                className="px-5 py-2.5 bg-[#2C2A29] hover:bg-[#1E1E1C] text-white text-xs font-medium rounded transition-colors shadow-sm cursor-pointer"
-              >
-                Save & Update Specification
-              </button>
+          {/* Action Row */}
+          <div className="pt-2 flex items-center justify-between">
+            <button
+              onClick={handleSave}
+              className="px-5 py-2.5 bg-[#2C2A29] hover:bg-[#1E1E1C] text-white text-xs font-medium rounded transition-colors shadow-sm cursor-pointer"
+            >
+              Save & Update Specification
+            </button>
 
-              {showSavedToast && (
-                <div className="text-xs text-emerald-800 flex items-center gap-1.5 animate-fade-in">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>Specification saved. Drawings regenerated.</span>
-                </div>
-              )}
-            </div>
+            {showSavedToast && (
+              <div className="text-xs text-emerald-800 flex items-center gap-1.5 animate-fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Specification saved. Re-approval required for manufacturing.</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -414,23 +652,23 @@ export const FurnitureSpecEditor: React.FC<FurnitureSpecEditorProps> = ({
 
             <div className="space-y-2.5">
               <div className="p-3 bg-amber-50/60 rounded border border-amber-200/80 text-xs space-y-1">
-                <div className="font-medium text-amber-900">1. Wood Movement Allowance</div>
+                <div className="font-medium text-amber-900">1. Wood Movement Allowance ({woodProp.commonName})</div>
                 <div className="text-[#6E5A44]">
-                  At {widthMm}mm width, white oak will move ~4–6mm across the grain seasonally. Slotted breadboard pin holes verified.
+                  Estimated: At {widthMm}mm width, {woodProp.commonName.toLowerCase()} will expand ~{woodMovement.seasonalExpansionMm}mm (±{woodMovement.halfMovement}mm) seasonally. Slotted breadboard pin holes designed in CAD; requires manufacturer verification during shop tooling.
                 </div>
               </div>
 
               <div className="p-3 bg-amber-50/60 rounded border border-amber-200/80 text-xs space-y-1">
-                <div className="font-medium text-amber-900">2. Deflection & Span Check</div>
+                <div className="font-medium text-amber-900">2. Deflection & Span Check (Estimated)</div>
                 <div className="text-[#6E5A44]">
-                  {lengthMm}mm span with {topThicknessMm}mm top thickness yields acceptable sag (&lt;1.2mm under 80kg center load).
+                  Preliminary estimate: {lengthMm}mm span with {topThicknessMm}mm top thickness modeled for residential use. Exact live-load deflection calculation requires fabricator shop review.
                 </div>
               </div>
 
               <div className="p-3 bg-amber-50/60 rounded border border-amber-200/80 text-xs space-y-1">
-                <div className="font-medium text-amber-900">3. Delivery Threshold Verification</div>
+                <div className="font-medium text-amber-900">3. Delivery Threshold Verification (Preliminary)</div>
                 <div className="text-[#6E5A44]">
-                  Ensure on-site door threshold is minimum 780mm wide or specify detachable knock-down trestle stretcher.
+                  Estimated doorway threshold clearance ~780mm. Delivery path and stair turn clearances require homeowner site check or knocked-down joinery.
                 </div>
               </div>
             </div>

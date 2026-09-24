@@ -35,7 +35,8 @@ export const BudgetSummaryView: React.FC<BudgetSummaryViewProps> = ({
 
   // Surface finishes cost (with 10% waste allowance)
   const surfaceCosts = activeDesign.surfaces.map((s) => {
-    const grossArea = Math.ceil(s.approxAreaSqFt * 1.1);
+    const netArea = s.surfaceType === 'flooring' ? project.roomModel.areaSqFt : s.approxAreaSqFt;
+    const grossArea = Math.ceil(netArea * 1.1);
     const prod = s.currentSelection;
     let cost = 0;
     if (prod.priceUnit === 'sq.ft') {
@@ -46,6 +47,7 @@ export const BudgetSummaryView: React.FC<BudgetSummaryViewProps> = ({
     }
     return {
       surface: s,
+      netArea,
       grossArea,
       cost,
     };
@@ -56,6 +58,8 @@ export const BudgetSummaryView: React.FC<BudgetSummaryViewProps> = ({
   const totalCommittedBudget = customFurnitureCost + catalogFurnitureCost + totalSurfacesCost + deliveryAndInstallCost;
   const initialBudget = project.preferences.overallBudget;
   const budgetDelta = totalCommittedBudget - initialBudget;
+  const originalDesignEstimate = activeDesign.estimatedTotalBudget;
+  const estimateDelta = totalCommittedBudget - originalDesignEstimate;
 
   const handlePrint = () => {
     window.print();
@@ -122,19 +126,23 @@ export const BudgetSummaryView: React.FC<BudgetSummaryViewProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex flex-wrap items-center gap-4 text-xs">
             <div>
               <span className="text-[#8C887B]">Target Budget: </span>
               <span className="font-mono font-medium text-[#1E1E1C]">${initialBudget.toLocaleString()}</span>
             </div>
             <div>
-              <span className="text-[#8C887B]">Committed: </span>
+              <span className="text-[#8C887B]">Original Concept Est.: </span>
+              <span className="font-mono font-medium text-[#706E66]">${originalDesignEstimate.toLocaleString()}</span>
+            </div>
+            <div>
+              <span className="text-[#8C887B]">Current Committed: </span>
               <span className="font-mono font-bold text-[#1E1E1C]">${totalCommittedBudget.toLocaleString()}</span>
             </div>
             <div>
-              <span className="text-[#8C887B]">Variance: </span>
+              <span className="text-[#8C887B]">Budget Variance: </span>
               <span className={`font-mono font-medium ${budgetDelta > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                {budgetDelta > 0 ? `+$${budgetDelta.toLocaleString()}` : `-$${Math.abs(budgetDelta).toLocaleString()}`}
+                {budgetDelta > 0 ? `+$${budgetDelta.toLocaleString()} over target` : `-$${Math.abs(budgetDelta).toLocaleString()} within target`}
               </span>
             </div>
           </div>
@@ -317,7 +325,7 @@ export const BudgetSummaryView: React.FC<BudgetSummaryViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F5F2EB]">
-              {surfaceCosts.map(({ surface, grossArea, cost }) => (
+              {surfaceCosts.map(({ surface, netArea, grossArea, cost }) => (
                 <tr key={surface.id} className="hover:bg-[#FAF9F6]">
                   <td className="py-3 px-3 font-medium text-[#1E1E1C]">{surface.name}</td>
                   <td className="py-3 px-3 text-[#5E5C56]">
@@ -326,7 +334,7 @@ export const BudgetSummaryView: React.FC<BudgetSummaryViewProps> = ({
                       {surface.currentSelection.manufacturer} · SKU {surface.currentSelection.sku}
                     </span>
                   </td>
-                  <td className="py-3 px-3 font-mono">{surface.approxAreaSqFt} sq ft</td>
+                  <td className="py-3 px-3 font-mono">{netArea} sq ft</td>
                   <td className="py-3 px-3 font-mono font-medium text-[#1E1E1C]">{grossArea} sq ft</td>
                   <td className="py-3 px-3 font-mono text-[#706E66]">
                     ${surface.currentSelection.pricePerUnit.toFixed(2)} / {surface.currentSelection.priceUnit}

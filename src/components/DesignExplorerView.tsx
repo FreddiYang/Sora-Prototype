@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { DesignAlternative, FurnitureObject, SurfaceFinish, RoomModel } from '../types';
+import { calculateDesignBudget } from '../utils/furnitureCalculations';
 import { InteractiveRoomCanvas } from './InteractiveRoomCanvas';
 import { 
   Sparkles, 
@@ -12,7 +13,9 @@ import {
   SlidersHorizontal,
   RotateCcw,
   Hammer,
-  ShoppingBag
+  ShoppingBag,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 interface DesignExplorerViewProps {
@@ -44,6 +47,20 @@ export const DesignExplorerView: React.FC<DesignExplorerViewProps> = ({
   const [refinementPrompt, setRefinementPrompt] = useState('');
   const [isRefining, setIsRefining] = useState(false);
   const [refinementFeedback, setRefinementFeedback] = useState<string | null>(null);
+  const [isRegeneratingRender, setIsRegeneratingRender] = useState(false);
+
+  const handleRegenerateRender = () => {
+    setIsRegeneratingRender(true);
+    setTimeout(() => {
+      setIsRegeneratingRender(false);
+      onUpdateDesign({
+        ...activeDesign,
+        isOutOfDate: false,
+        outOfDateReason: undefined,
+        lastRegeneratedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+    }, 1200);
+  };
 
   const samplePrompts = [
     'Use lighter blonde ash wood',
@@ -169,7 +186,7 @@ export const DesignExplorerView: React.FC<DesignExplorerViewProps> = ({
             Personalized Room Visualizations
           </h1>
           <p className="text-sm text-[#5E5C56] mt-1.5 max-w-2xl">
-            Generated directly from your verified 18' × 14' spatial scan. Every furniture piece is modeled at true millimeter scale with verified 36"+ circulation paths.
+            Generated directly from your {roomModel.length.valueFtIn} × {roomModel.width.valueFtIn} ({roomModel.length.valueMm.toLocaleString()} × {roomModel.width.valueMm.toLocaleString()} mm) room model. Modeled at millimeter scale with preliminary 36"+ circulation clearance checks (subject to on-site layout).
           </p>
         </div>
 
@@ -177,6 +194,7 @@ export const DesignExplorerView: React.FC<DesignExplorerViewProps> = ({
         <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-[#E8E6DF] shadow-xs">
           {designs.map((d) => {
             const isSelected = activeDesign.id === d.id;
+            const bInfo = calculateDesignBudget(d, roomModel);
             return (
               <button
                 key={d.id}
@@ -192,8 +210,11 @@ export const DesignExplorerView: React.FC<DesignExplorerViewProps> = ({
                 }`}
               >
                 <div className="truncate max-w-[150px] font-semibold">{d.title.split('&')[0].trim()}</div>
-                <div className={`text-[10px] truncate max-w-[150px] ${isSelected ? 'text-[#DCD7CB]' : 'text-[#8C887B]'}`}>
-                  ${d.estimatedTotalBudget.toLocaleString()}
+                <div className={`text-[10px] truncate max-w-[150px] font-mono ${isSelected ? 'text-[#DCD7CB]' : 'text-[#8C887B]'}`}>
+                  ${bInfo.currentTotalCost.toLocaleString()}
+                  <span className="text-[9px] opacity-75 block font-sans">
+                    (Est. ${d.estimatedTotalBudget.toLocaleString()})
+                  </span>
                 </div>
               </button>
             );
@@ -205,6 +226,29 @@ export const DesignExplorerView: React.FC<DesignExplorerViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Interactive Canvas & Refinement Prompt */}
         <div className="lg:col-span-8 space-y-6">
+          {/* Out of Date Banner */}
+          {activeDesign.isOutOfDate && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2 text-amber-900">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold">3D Perspective Rendering: Out of Date</span>
+                  <p className="text-amber-800 text-[11px] mt-0.5">
+                    {activeDesign.outOfDateReason || 'Spatial geometry or custom millwork parameters were updated.'} Real-time 2D spatial clearances and CAD fabrication packages are active.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleRegenerateRender}
+                disabled={isRegeneratingRender}
+                className="px-3.5 py-1.5 bg-[#2C2A29] hover:bg-[#1E1E1C] text-white rounded font-medium shrink-0 flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRegeneratingRender ? 'animate-spin' : ''}`} />
+                <span>{isRegeneratingRender ? 'Regenerating...' : 'Regenerate 3D Visual'}</span>
+              </button>
+            </div>
+          )}
+
           <InteractiveRoomCanvas
             design={activeDesign}
             selectedFurniture={selectedFurniture}
@@ -219,6 +263,9 @@ export const DesignExplorerView: React.FC<DesignExplorerViewProps> = ({
             }}
             viewMode={viewMode}
             onToggleViewMode={setViewMode}
+            roomModel={roomModel}
+            onRegenerateRender={handleRegenerateRender}
+            isRegeneratingRender={isRegeneratingRender}
           />
 
           {/* Natural Language Refinement Bar */}
@@ -417,7 +464,7 @@ export const DesignExplorerView: React.FC<DesignExplorerViewProps> = ({
                 </div>
                 <div className="text-right">
                   <span className="font-mono text-base font-semibold text-[#1E1E1C]">
-                    {selectedSurface.approxAreaSqFt} sq ft
+                    {selectedSurface.surfaceType === 'flooring' ? roomModel.areaSqFt : selectedSurface.approxAreaSqFt} sq ft
                   </span>
                   <span className="text-[10px] text-[#8C887B] block">Surface Area</span>
                 </div>
@@ -501,7 +548,9 @@ export const DesignExplorerView: React.FC<DesignExplorerViewProps> = ({
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                     <span className="truncate">{surf.name}</span>
                   </div>
-                  <span className="text-[11px] text-[#706E66] font-mono">{surf.approxAreaSqFt} sq ft</span>
+                  <span className="text-[11px] text-[#706E66] font-mono">
+                    {surf.surfaceType === 'flooring' ? roomModel.areaSqFt : surf.approxAreaSqFt} sq ft
+                  </span>
                 </div>
               ))}
             </div>

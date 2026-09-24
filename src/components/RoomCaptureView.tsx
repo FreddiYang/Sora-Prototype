@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { RoomModel, DimensionSource } from '../types';
+import { mmToFeetInches } from '../utils/formatters';
 import { 
   Camera, 
   Upload, 
@@ -35,36 +36,37 @@ export const RoomCaptureView: React.FC<RoomCaptureViewProps> = ({
   const [ceilingMm, setCeilingMm] = useState(roomModel.ceilingHeight.valueMm);
   const [showSavedFeedback, setShowSavedFeedback] = useState(false);
 
-  const mmToFeetInches = (mm: number) => {
-    const totalInches = mm / 25.4;
-    const feet = Math.floor(totalInches / 12);
-    const inches = Math.round(totalInches % 12);
-    return `${feet}' ${inches}"`;
-  };
+  // Sync internal state when parent roomModel updates (e.g. sample room switch or reload)
+  React.useEffect(() => {
+    setLengthMm(roomModel.length.valueMm);
+    setWidthMm(roomModel.width.valueMm);
+    setCeilingMm(roomModel.ceilingHeight.valueMm);
+  }, [roomModel.length.valueMm, roomModel.width.valueMm, roomModel.ceilingHeight.valueMm]);
 
   const handleSimulateScan = () => {
     setIsSimulatingScan(true);
     setScanProgress(0);
+    let progress = 0;
     const interval = setInterval(() => {
-      setScanProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsSimulatingScan(false);
-          // Update model with measured status
-          const updated: RoomModel = {
-            ...roomModel,
-            scanMethod: 'lidar_scan',
-            scanDate: new Date().toISOString().split('T')[0],
-            confidenceScore: 99,
-            length: { ...roomModel.length, source: 'measured' },
-            width: { ...roomModel.width, source: 'measured' },
-            ceilingHeight: { ...roomModel.ceilingHeight, source: 'measured' },
-          };
-          onUpdateRoomModel(updated);
-          return 100;
-        }
-        return prev + 20;
-      });
+      progress += 20;
+      if (progress >= 100) {
+        clearInterval(interval);
+        setScanProgress(100);
+        setIsSimulatingScan(false);
+        // Safely update parent model outside setState updater
+        const updated: RoomModel = {
+          ...roomModel,
+          scanMethod: 'lidar_scan',
+          scanDate: new Date().toISOString().split('T')[0],
+          confidenceScore: 95,
+          length: { ...roomModel.length, source: 'measured' },
+          width: { ...roomModel.width, source: 'measured' },
+          ceilingHeight: { ...roomModel.ceilingHeight, source: 'measured' },
+        };
+        onUpdateRoomModel(updated);
+      } else {
+        setScanProgress(progress);
+      }
     }, 300);
   };
 
@@ -161,7 +163,7 @@ export const RoomCaptureView: React.FC<RoomCaptureViewProps> = ({
           <Camera className="w-4 h-4 text-[#5C4033]" />
           <div>
             <div className="font-medium">LiDAR Room Scan</div>
-            <div className="text-[10px] text-[#8C887B]">Mobile depth sensor (98% precision)</div>
+            <div className="text-[10px] text-[#8C887B]">Mobile sensor capture (Estimated ±25mm preliminary)</div>
           </div>
         </button>
 
@@ -367,20 +369,20 @@ export const RoomCaptureView: React.FC<RoomCaptureViewProps> = ({
               </g>
 
               {/* Dimensions Labels on Canvas */}
-              {/* Length dimension (Top: 5480 mm) */}
+              {/* Length dimension (Top) */}
               <line x1="60" y1="18" x2="540" y2="18" stroke="#1E1E1C" strokeWidth="1.2" />
               <line x1="60" y1="12" x2="60" y2="24" stroke="#1E1E1C" strokeWidth="1.2" />
               <line x1="540" y1="12" x2="540" y2="24" stroke="#1E1E1C" strokeWidth="1.2" />
               <text x="300" y="14" fill="#1E1E1C" fontSize="11" fontWeight="600" textAnchor="middle" fontFamily="monospace">
-                5,480 mm (18' 0")
+                {roomModel.length.valueMm.toLocaleString()} mm ({roomModel.length.valueFtIn})
               </text>
 
-              {/* Width dimension (Left: 4260 mm) */}
+              {/* Width dimension (Left) */}
               <line x1="30" y1="45" x2="30" y2="415" stroke="#1E1E1C" strokeWidth="1.2" />
               <line x1="24" y1="45" x2="36" y2="45" stroke="#1E1E1C" strokeWidth="1.2" />
               <line x1="24" y1="415" x2="36" y2="415" stroke="#1E1E1C" strokeWidth="1.2" />
               <text x="22" y="235" fill="#1E1E1C" fontSize="11" fontWeight="600" textAnchor="middle" fontFamily="monospace" transform="rotate(-90 22 235)">
-                4,260 mm (14' 0")
+                {roomModel.width.valueMm.toLocaleString()} mm ({roomModel.width.valueFtIn})
               </text>
             </svg>
 
@@ -427,11 +429,11 @@ export const RoomCaptureView: React.FC<RoomCaptureViewProps> = ({
                   </span>
                 </div>
                 <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                  98% Confidence
+                  Estimated (Preliminary Mobile Scan)
                 </span>
               </div>
               <p className="text-xs text-[#5E5C56]">
-                iPhone / iPad Pro RoomPlan LiDAR point cloud verified 3 days ago. Room planes and door thresholds captured automatically.
+                iPhone / iPad Pro RoomPlan LiDAR point cloud preliminary capture. Wall planes and door thresholds captured automatically; subject to physical tape confirmation before fabrication.
               </p>
               <button
                 onClick={handleSimulateScan}

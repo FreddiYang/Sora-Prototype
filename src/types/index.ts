@@ -63,16 +63,44 @@ export interface FurnitureSpecification {
   manufacturerReviewRequired: string[];
 }
 
+export interface RevisionRecord {
+  revision: string;
+  date: string;
+  changeNote: string;
+  author: string;
+}
+
+export type DrawingDocumentStatus = 
+  | 'concept_draft' 
+  | 'ready_for_review' 
+  | 'changes_requested' 
+  | 'approved_for_manufacturing';
+
+export interface ReviewerSignOff {
+  reviewerName: string;
+  role: string;
+  organization: string;
+  approvalDate: string;
+  reviewNotes: string;
+  outstandingIssues: string[];
+}
+
 export interface DrawingPackage {
   id: string;
   packageType: 'concept_package' | 'manufacturing_package';
+  status?: DrawingDocumentStatus;
   drawingNumber: string;
   revision: string;
   drawnDate: string;
+  reviewerSignOff?: ReviewerSignOff;
   approvedBy?: string;
+  approvedDate?: string;
+  isApprovalInvalidated?: boolean;
+  invalidationReason?: string;
   bom: BOMComponent[];
   generalNotes: string[];
   manufacturingQuestions: string[];
+  revisionHistory?: RevisionRecord[];
 }
 
 export interface FurnitureObject {
@@ -114,10 +142,14 @@ export interface MaterialProduct {
   leadTimeWeeks: number;
   inStock: boolean;
   lastUpdated: string;
-  matchType: 'exact_identified' | 'visually_similar_alternative';
+  matchType: 'exact_identified' | 'specification_match' | 'visually_similar_alternative';
   matchReason: string;
   visualMatchScore: number; // 0 - 100
   swatchColor: string;
+  attributesMatch?: string[];
+  attributesDiffer?: string[];
+  installationSuitability?: string;
+  packageCoverageLabel?: string;
 }
 
 export interface SurfaceFinish {
@@ -141,6 +173,14 @@ export interface SurfaceFinish {
   alternativeProducts: MaterialProduct[];
 }
 
+export interface DesignVersionRecord {
+  id: string;
+  timestamp: string;
+  summary: string;
+  budget: number;
+  tableDimensions: string;
+}
+
 export interface DesignAlternative {
   id: string;
   title: string;
@@ -157,10 +197,27 @@ export interface DesignAlternative {
   surfaces: SurfaceFinish[];
   circulationClearanceOk: boolean;
   parentVersionId?: string;
+  isOutOfDate?: boolean;
+  outOfDateReason?: string;
+  lastRegeneratedAt?: string;
+  whyItFits?: string;
+  practicalComparison?: {
+    seating: string;
+    storage: string;
+    tradeOffs: string;
+    estimatedCost: string;
+  };
+  chairQuantity?: number;
+  versionHistory?: DesignVersionRecord[];
 }
 
 export interface ProjectPreferences {
   roomType: string;
+  roomPurpose?: string;
+  everydaySeating?: number;
+  guestCapacity?: number;
+  desiredDeliveryTiming?: string;
+  retainedFurnitureNotes?: string;
   intendedActivities: string[];
   overallBudget: number;
   preferredStyles: string[];

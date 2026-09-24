@@ -18,7 +18,12 @@ export const PreferencesModal: React.FC<PreferencesModalProps> = ({
   if (!isOpen) return null;
 
   const [budget, setBudget] = useState(preferences.overallBudget);
-  const [seating, setSeating] = useState(preferences.functionalRequirements.seatingCapacity);
+  const [roomPurpose, setRoomPurpose] = useState(preferences.roomPurpose || 'Daily family dining & regular weekend hosting');
+  const [everydaySeating, setEverydaySeating] = useState(preferences.everydaySeating || 6);
+  const [guestCapacity, setGuestCapacity] = useState(preferences.guestCapacity || 8);
+  const [preferredStyle, setPreferredStyle] = useState(preferences.preferredStyles?.[0] || 'Nordic Warm Minimalist');
+  const [retainedFurniture, setRetainedFurniture] = useState(preferences.retainedFurnitureNotes || 'Retaining family heirloom brass pendant lighting');
+  const [desiredDeliveryTiming, setDesiredDeliveryTiming] = useState(preferences.desiredDeliveryTiming || 'Standard (8-10 weeks for custom millwork)');
   const [childrenOrPets, setChildrenOrPets] = useState(preferences.functionalRequirements.childrenOrPets);
   const [storageNeeded, setStorageNeeded] = useState(preferences.functionalRequirements.storageNeeded);
   const [accessibilityNeeds, setAccessibilityNeeds] = useState(preferences.functionalRequirements.accessibilityNeeds);
@@ -46,10 +51,16 @@ export const PreferencesModal: React.FC<PreferencesModalProps> = ({
     onSavePreferences({
       ...preferences,
       overallBudget: budget,
+      roomPurpose,
+      everydaySeating,
+      guestCapacity,
+      preferredStyles: [preferredStyle],
+      retainedFurnitureNotes: retainedFurniture,
+      desiredDeliveryTiming,
       preferredWoods: selectedWoods,
       functionalRequirements: {
         ...preferences.functionalRequirements,
-        seatingCapacity: seating,
+        seatingCapacity: everydaySeating,
         childrenOrPets,
         storageNeeded,
         accessibilityNeeds,
@@ -81,6 +92,32 @@ export const PreferencesModal: React.FC<PreferencesModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-y-6 flex-1">
+          {/* Room Purpose */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#1E1E1C] block">Room Purpose & Primary Function</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[
+                'Daily family dining & regular weekend hosting',
+                'Formal dinner entertaining & wine staging',
+                'Multipurpose family dining & work-from-home',
+                'Open-concept great room flow with casual meals',
+              ].map((purpose) => (
+                <button
+                  key={purpose}
+                  type="button"
+                  onClick={() => setRoomPurpose(purpose)}
+                  className={`p-2.5 text-xs text-left rounded-lg border transition-colors cursor-pointer ${
+                    roomPurpose === purpose
+                      ? 'bg-[#2C2A29] text-white border-[#2C2A29]'
+                      : 'bg-[#FAF9F6] border-[#DDD7C8] text-[#5E5C56] hover:border-[#8C887B]'
+                  }`}
+                >
+                  <div className="font-medium">{purpose}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Budget Slider */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
@@ -103,6 +140,83 @@ export const PreferencesModal: React.FC<PreferencesModalProps> = ({
             </div>
           </div>
 
+          {/* Seating: Everyday vs Occasional Guest Capacity */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-semibold text-[#1E1E1C]">Everyday Seating Needs</label>
+                <span className="font-mono text-xs font-bold text-[#2C2A29]">{everydaySeating} Chairs</span>
+              </div>
+              <p className="text-[11px] text-[#706E66]">Chairs placed out at the dining table on a daily basis.</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[4, 6, 8, 10].map((cap) => (
+                  <button
+                    key={cap}
+                    type="button"
+                    onClick={() => setEverydaySeating(cap)}
+                    className={`py-1.5 text-xs font-mono font-semibold rounded border transition-colors cursor-pointer ${
+                      everydaySeating === cap
+                        ? 'bg-[#2C2A29] text-white border-[#2C2A29]'
+                        : 'bg-[#FAF9F6] border-[#DDD7C8] text-[#5E5C56] hover:border-[#8C887B]'
+                    }`}
+                  >
+                    {cap}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-semibold text-[#1E1E1C]">Max Occasional Guest Capacity</label>
+                <span className="font-mono text-xs font-bold text-[#5C4033]">{guestCapacity} Guests</span>
+              </div>
+              <p className="text-[11px] text-[#706E66]">With table breadboard leaves or pull-up side chairs.</p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[6, 8, 10, 12].map((cap) => (
+                  <button
+                    key={cap}
+                    type="button"
+                    onClick={() => setGuestCapacity(cap)}
+                    className={`py-1.5 text-xs font-mono font-semibold rounded border transition-colors cursor-pointer ${
+                      guestCapacity === cap
+                        ? 'bg-[#5C4033] text-white border-[#5C4033]'
+                        : 'bg-[#FAF9F6] border-[#DDD7C8] text-[#5E5C56] hover:border-[#8C887B]'
+                    }`}
+                  >
+                    {cap}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Preferred Style */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#1E1E1C] block">Preferred Design Aesthetic</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                'Nordic Warm Minimalist',
+                'Japandi Architectural Craft',
+                'Contemporary Organic',
+                'Traditional American Craftsman',
+              ].map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => setPreferredStyle(style)}
+                  className={`p-2 text-xs text-center rounded border transition-colors cursor-pointer ${
+                    preferredStyle === style
+                      ? 'bg-[#2C2A29] text-white border-[#2C2A29] font-medium'
+                      : 'bg-[#FAF9F6] border-[#DDD7C8] text-[#5E5C56] hover:border-[#8C887B]'
+                  }`}
+                >
+                  {style}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Solid Wood Preferences */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-[#1E1E1C] block">Preferred Hardwood Species</label>
@@ -112,6 +226,7 @@ export const PreferencesModal: React.FC<PreferencesModalProps> = ({
                 return (
                   <button
                     key={wood}
+                    type="button"
                     onClick={() => handleToggleWood(wood)}
                     className={`px-3 py-1.5 rounded text-xs font-medium transition-colors cursor-pointer flex items-center gap-1.5 ${
                       isSelected
@@ -127,21 +242,38 @@ export const PreferencesModal: React.FC<PreferencesModalProps> = ({
             </div>
           </div>
 
-          {/* Seating Capacity */}
+          {/* Retained Furniture & Existing Items */}
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-[#1E1E1C] block">Target Dining Seating Capacity</label>
-            <div className="grid grid-cols-4 gap-2">
-              {[4, 6, 8, 10].map((cap) => (
+            <label className="text-xs font-semibold text-[#1E1E1C] block">Retained Furniture & Existing Heirlooms</label>
+            <input
+              type="text"
+              value={retainedFurniture}
+              onChange={(e) => setRetainedFurniture(e.target.value)}
+              placeholder="e.g., Keeping vintage credenza, brass pendant light, or existing art"
+              className="w-full px-3 py-2 text-xs bg-[#FAF9F6] border border-[#DCD7CB] rounded focus:border-[#2C2A29] focus:outline-none"
+            />
+          </div>
+
+          {/* Desired Delivery Timing */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[#1E1E1C] block">Desired Delivery Timing</label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {[
+                'Standard (8-10 weeks for custom millwork)',
+                'Expedited (4-6 weeks where possible)',
+                'Flexible (Align with home renovation schedule)',
+              ].map((timing) => (
                 <button
-                  key={cap}
-                  onClick={() => setSeating(cap)}
-                  className={`py-2 text-xs font-mono font-semibold rounded border transition-colors cursor-pointer ${
-                    seating === cap
-                      ? 'bg-[#2C2A29] text-white border-[#2C2A29]'
+                  key={timing}
+                  type="button"
+                  onClick={() => setDesiredDeliveryTiming(timing)}
+                  className={`p-2 text-xs text-left rounded border transition-colors cursor-pointer ${
+                    desiredDeliveryTiming === timing
+                      ? 'bg-[#2C2A29] text-white border-[#2C2A29] font-medium'
                       : 'bg-[#FAF9F6] border-[#DDD7C8] text-[#5E5C56] hover:border-[#8C887B]'
                   }`}
                 >
-                  {cap} Seats
+                  {timing}
                 </button>
               ))}
             </div>
@@ -191,7 +323,7 @@ export const PreferencesModal: React.FC<PreferencesModalProps> = ({
               <div className="text-xs">
                 <span className="font-semibold text-[#1E1E1C] block">Enhanced Clearance & Mobility Access</span>
                 <span className="text-[#706E66]">
-                  Guarantees minimum 42" circulation pathways around all furniture edges.
+                  Targets estimated 42" circulation clearances around primary walkways (preliminary check).
                 </span>
               </div>
             </label>

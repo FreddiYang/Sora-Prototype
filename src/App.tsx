@@ -48,9 +48,38 @@ export default function App() {
   };
 
   const handleUpdateRoomModel = (updatedRoomModel: RoomModel) => {
+    // Synchronize surface finishes across all designs so flooring and wall takeoffs match the updated room
+    const updatedDesigns = project.designs.map((design) => {
+      const updatedSurfaces = design.surfaces.map((surface) => {
+        if (surface.surfaceType === 'flooring') {
+          return {
+            ...surface,
+            approxAreaSqFt: updatedRoomModel.areaSqFt,
+          };
+        }
+        if (surface.surfaceType === 'wall_paint') {
+          const perimeterM = 2 * ((updatedRoomModel.length.valueMm + updatedRoomModel.width.valueMm) / 1000);
+          const wallAreaSqM = perimeterM * (updatedRoomModel.ceilingHeight.valueMm / 1000) * 0.85;
+          return {
+            ...surface,
+            approxAreaSqFt: Math.round(wallAreaSqM * 10.7639),
+          };
+        }
+        return surface;
+      });
+
+      return {
+        ...design,
+        surfaces: updatedSurfaces,
+        isOutOfDate: true,
+        outOfDateReason: `Room geometry adjusted to ${updatedRoomModel.length.valueMm} × ${updatedRoomModel.width.valueMm} mm (${updatedRoomModel.length.valueFtIn} × ${updatedRoomModel.width.valueFtIn}). Measured area: ${updatedRoomModel.areaSqFt} sq ft.`,
+      };
+    });
+
     setProject((prev) => ({
       ...prev,
       roomModel: updatedRoomModel,
+      designs: updatedDesigns,
     }));
   };
 
@@ -80,6 +109,8 @@ export default function App() {
     const updatedDesign: DesignAlternative = {
       ...activeDesign,
       furnitureObjects: updatedFurnitureList,
+      isOutOfDate: true,
+      outOfDateReason: `Custom millwork "${updatedFurniture.name}" modified (${updatedFurniture.dimensionsSummary.split('(')[0].trim()}). CAD drawings and BOM regenerated.`,
     };
     handleUpdateDesign(updatedDesign);
   };
@@ -153,6 +184,8 @@ export default function App() {
         {activeTab === 'drawings' && (
           <DrawingPackageView
             furniture={activeFurniture}
+            roomModel={project.roomModel}
+            onUpdateFurniture={handleUpdateFurniture}
             onBackToEditor={() => setActiveTab('furniture-spec')}
           />
         )}
@@ -164,6 +197,7 @@ export default function App() {
             onSwitchSurface={(s) => setActiveSurface(s)}
             onSelectProduct={handleSelectMaterialProduct}
             onOrderSample={(prod) => console.log('Sample requested for SKU:', prod.sku)}
+            roomModel={project.roomModel}
           />
         )}
 

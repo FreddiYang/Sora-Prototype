@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { SurfaceFinish, MaterialProduct } from '../types';
+import { SurfaceFinish, MaterialProduct, RoomModel, DesignAlternative } from '../types';
 import { CATALOG_MATERIALS } from '../data/initialData';
 import { 
   ShoppingBag, 
@@ -21,6 +21,8 @@ interface MaterialDiscoveryPanelProps {
   onOrderSample: (product: MaterialProduct) => void;
   allSurfaces: SurfaceFinish[];
   onSwitchSurface: (surface: SurfaceFinish) => void;
+  roomModel?: RoomModel;
+  activeDesign?: DesignAlternative;
 }
 
 export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
@@ -29,32 +31,43 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
   onOrderSample,
   allSurfaces,
   onSwitchSurface,
+  roomModel,
+  activeDesign,
 }) => {
   const activeSurface = surface || allSurfaces[0];
   
   // Calculator state
   const [wastePercent, setWastePercent] = useState<number>(10);
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'exact' | 'alternative'>('all');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'exact' | 'spec_match' | 'alternative'>('all');
   const [sampleOrderedSku, setSampleOrderedSku] = useState<string | null>(null);
+  const [sampleFeedback, setSampleFeedback] = useState<string | null>(null);
 
   if (!activeSurface) {
     return null;
   }
 
-  // Calculate quantities
-  const netArea = activeSurface.approxAreaSqFt;
-  const grossArea = Math.ceil(netArea * (1 + wastePercent / 100));
+  // Calculate quantities from single source of truth
+  const netArea = activeSurface.surfaceType === 'flooring' && roomModel
+    ? roomModel.areaSqFt
+    : activeSurface.approxAreaSqFt;
+  const wasteAllowanceSqFt = Math.ceil(netArea * (wastePercent / 100));
+  const requiredCoverageSqFt = netArea + wasteAllowanceSqFt;
   
-  const getRequiredUnits = (prod: MaterialProduct) => {
-    return Math.ceil(grossArea / prod.coveragePerUnit);
+  const getPackageCount = (prod: MaterialProduct) => {
+    return Math.ceil(requiredCoverageSqFt / prod.coveragePerUnit);
+  };
+
+  const getPurchasedCoverage = (prod: MaterialProduct) => {
+    return Number((getPackageCount(prod) * prod.coveragePerUnit).toFixed(1));
   };
 
   const getEstimatedCost = (prod: MaterialProduct) => {
-    if (prod.priceUnit === 'sq.ft') {
-      return Math.round(grossArea * prod.pricePerUnit);
+    const packages = getPackageCount(prod);
+    if (prod.priceUnit === 'gallon' || prod.priceUnit === 'box' || prod.priceUnit === 'piece') {
+      return Math.round(packages * prod.pricePerUnit);
     }
-    const units = getRequiredUnits(prod);
-    return Math.round(units * prod.pricePerUnit);
+    // For sq.ft priced items sold in cartons, price is packages * coveragePerBox * pricePerSqFt
+    return Math.round(packages * prod.coveragePerUnit * prod.pricePerUnit);
   };
 
   // Products filtered for this surface type
@@ -65,16 +78,50 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
     return true;
   });
 
+  // Dynamically determine match status bound to activeDesign and current surface selection
+  const getProductMatchClassification = (prod: MaterialProduct): {
+    type: 'exact' | 'spec_match' | 'alternative';
+    label: string;
+    badgeClass: string;
+  } => {
+    const isCurrentActiveExact = activeSurface.currentSelection.sku === prod.sku;
+    if (isCurrentActiveExact) {
+      return {
+        type: 'exact',
+        label: 'Exact Product in Design',
+        badgeClass: 'text-emerald-800 bg-emerald-50 border-emerald-300 font-semibold',
+      };
+    }
+    if (prod.matchType === 'specification_match' || (prod.category === activeSurface.currentSelection.category && prod.visualMatchScore >= 90)) {
+      return {
+        type: 'spec_match',
+        label: 'Specification Match',
+        badgeClass: 'text-indigo-800 bg-indigo-50 border-indigo-300 font-medium',
+      };
+    }
+    return {
+      type: 'alternative',
+      label: 'Visually Similar Alternative',
+      badgeClass: 'text-amber-800 bg-amber-50 border-amber-300 font-medium',
+    };
+  };
+
   const filteredProducts = products.filter((p) => {
-    if (selectedFilter === 'exact') return p.matchType === 'exact_identified';
-    if (selectedFilter === 'alternative') return p.matchType === 'visually_similar_alternative';
+    const match = getProductMatchClassification(p);
+    if (selectedFilter === 'exact') return match.type === 'exact';
+    if (selectedFilter === 'spec_match') return match.type === 'spec_match';
+    if (selectedFilter === 'alternative') return match.type === 'alternative';
     return true;
   });
 
   const handleSampleClick = (prod: MaterialProduct) => {
     onOrderSample(prod);
     setSampleOrderedSku(prod.sku);
-    setTimeout(() => setSampleOrderedSku(null), 3000);
+    setSampleFeedback(`Sample requested: 1x physical material swatch (${prod.name}) queued for delivery. Tracking #AS-SMPL-${prod.sku.replace(/[^0-9]/g, '') || '9401'} (Demonstration Order).`);
+    setTimeout(() => {
+      setSampleOrderedSku(null);
+      setSampleFeedback(null);
+    }, 4500);
   };
 
   return (
@@ -134,7 +181,7 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
           <div className="flex items-center justify-between text-xs">
             <span className="text-[#706E66] font-medium flex items-center gap-1.5">
               <Calculator className="w-3.5 h-3.5 text-[#5C4033]" />
-              Measured Net Surface:
+              Measured Net Surface Area:
             </span>
             <span className="font-mono font-semibold text-[#1E1E1C]">{netArea} sq ft</span>
           </div>
@@ -142,7 +189,7 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
           <div className="space-y-1">
             <div className="flex items-center justify-between text-xs">
               <label className="text-[#706E66]">Waste & Cut Allowance:</label>
-              <span className="font-mono font-medium text-[#1E1E1C]">{wastePercent}%</span>
+              <span className="font-mono font-medium text-[#1E1E1C]">{wastePercent}% (+{wasteAllowanceSqFt} sq ft)</span>
             </div>
             <input
               type="range"
@@ -155,21 +202,33 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
             />
             <div className="flex justify-between text-[10px] text-[#8C887B]">
               <span>5% (Simple Rectangles)</span>
-              <span>10% (Standard)</span>
-              <span>15%+ (Herringbone/Angles)</span>
+              <span>10% (Standard Planks)</span>
+              <span>15%+ (Angles & Nooks)</span>
             </div>
           </div>
 
-          <div className="pt-2 border-t border-[#E2DFD6] flex items-center justify-between text-xs">
-            <span className="text-[#1E1E1C] font-semibold">Total Order Gross Area:</span>
-            <span className="font-mono text-sm font-bold text-[#1E1E1C]">{grossArea} sq ft</span>
+          <div className="pt-2 border-t border-[#E2DFD6] space-y-1 text-xs">
+            <div className="flex justify-between text-[#706E66]">
+              <span>Required Gross Coverage:</span>
+              <span className="font-mono font-medium text-[#1E1E1C]">{requiredCoverageSqFt} sq ft</span>
+            </div>
+            <div className="text-[11px] text-[#8C887B]">
+              Packages are rounded up to whole boxes/cans to prevent shortfalls.
+            </div>
           </div>
         </div>
       </div>
 
+      {sampleFeedback && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center gap-2 animate-fade-in">
+          <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{sampleFeedback}</span>
+        </div>
+      )}
+
       {/* Filter Tabs */}
-      <div className="flex items-center justify-between text-xs">
-        <div className="flex items-center gap-1 p-1 bg-white rounded-lg border border-[#E8E6DF]">
+      <div className="flex flex-wrap items-center justify-between text-xs gap-3">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-white rounded-lg border border-[#E8E6DF]">
           <button
             onClick={() => setSelectedFilter('all')}
             className={`px-3 py-1.5 rounded transition-colors cursor-pointer ${
@@ -178,7 +237,7 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
                 : 'text-[#6B6962] hover:text-[#1E1E1C]'
             }`}
           >
-            All Products ({products.length})
+            All Verified Catalog ({products.length})
           </button>
           <button
             onClick={() => setSelectedFilter('exact')}
@@ -188,7 +247,17 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
                 : 'text-[#6B6962] hover:text-[#1E1E1C]'
             }`}
           >
-            Exact Matches Only
+            Exact Product in Design
+          </button>
+          <button
+            onClick={() => setSelectedFilter('spec_match')}
+            className={`px-3 py-1.5 rounded transition-colors cursor-pointer ${
+              selectedFilter === 'spec_match'
+                ? 'bg-[#2C2A29] text-white font-medium'
+                : 'text-[#6B6962] hover:text-[#1E1E1C]'
+            }`}
+          >
+            Specification Matches
           </button>
           <button
             onClick={() => setSelectedFilter('alternative')}
@@ -202,7 +271,7 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
           </button>
         </div>
 
-        <span className="text-xs text-[#706E66]">Prices verified from active suppliers</span>
+        <span className="text-xs text-[#706E66]">Prices verified directly from trade suppliers</span>
       </div>
 
       {/* Products Grid */}
@@ -210,7 +279,9 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
         {filteredProducts.map((prod) => {
           const isSelected = activeSurface.currentSelection.sku === prod.sku;
           const cost = getEstimatedCost(prod);
-          const unitsNeeded = getRequiredUnits(prod);
+          const packagesNeeded = getPackageCount(prod);
+          const purchasedCoverage = getPurchasedCoverage(prod);
+          const matchInfo = getProductMatchClassification(prod);
 
           return (
             <div
@@ -238,15 +309,9 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
                   </div>
 
                   <div>
-                    {prod.matchType === 'exact_identified' ? (
-                      <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        Exact Spec Match ({prod.visualMatchScore}%)
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-semibold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                        Visually Similar ({prod.visualMatchScore}%)
-                      </span>
-                    )}
+                    <span className={`text-[10px] px-2 py-0.5 rounded border ${matchInfo.badgeClass}`}>
+                      {matchInfo.label} ({prod.visualMatchScore}%)
+                    </span>
                   </div>
                 </div>
 
@@ -256,21 +321,49 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
                   <p className="text-xs text-[#5E5C56] mt-1.5 leading-relaxed">{prod.texture}</p>
                 </div>
 
-                {/* Match Reasoning Callout */}
-                <div className="p-3 bg-[#FAF9F6] rounded border border-[#EDEAE3] text-xs text-[#5E5C56] space-y-1">
-                  <span className="text-[10px] font-semibold uppercase text-[#8C887B] block">Match Rationale</span>
-                  <span>{prod.matchReason}</span>
+                {/* Match Reasoning & Attribute Differences */}
+                <div className="p-3 bg-[#FAF9F6] rounded border border-[#EDEAE3] text-xs text-[#5E5C56] space-y-1.5">
+                  <div>
+                    <span className="text-[10px] font-semibold uppercase text-[#8C887B] block">Design Correlation</span>
+                    <span>{prod.matchReason}</span>
+                  </div>
+
+                  {prod.attributesMatch && prod.attributesMatch.length > 0 && (
+                    <div className="pt-1 border-t border-[#EAE6DD] text-[11px]">
+                      <span className="text-emerald-800 font-medium">✓ Matching Attributes: </span>
+                      <span>{prod.attributesMatch.join(', ')}</span>
+                    </div>
+                  )}
+
+                  {prod.attributesDiffer && prod.attributesDiffer.length > 0 && prod.attributesDiffer[0] !== 'None' && (
+                    <div className="text-[11px]">
+                      <span className="text-amber-800 font-medium">⚠ Specification Difference: </span>
+                      <span>{prod.attributesDiffer.join(', ')}</span>
+                    </div>
+                  )}
                 </div>
+
+                {/* Installation Suitability */}
+                {prod.installationSuitability && (
+                  <div className="text-[11px] text-[#706E66] bg-[#F7F5F0] p-2 rounded border border-[#EDE8DE]">
+                    <span className="font-semibold text-[#5C4033]">Installation Suitability: </span>
+                    <span>{prod.installationSuitability}</span>
+                  </div>
+                )}
 
                 {/* Details Breakdown */}
                 <div className="space-y-1.5 text-xs pt-1">
                   <div className="flex justify-between">
-                    <span className="text-[#706E66]">Dimensions / Format:</span>
+                    <span className="text-[#706E66]">Format / Dimensions:</span>
                     <span className="font-medium text-[#1E1E1C]">{prod.dimensions}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#706E66]">Finish Profile:</span>
                     <span className="font-medium text-[#1E1E1C]">{prod.finish}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#706E66]">Packaging Yield:</span>
+                    <span className="font-mono text-[#1E1E1C]">{prod.packageCoverageLabel || `${prod.coveragePerUnit} sq ft per container`}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#706E66]">Lead Time:</span>
@@ -282,17 +375,28 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
                 </div>
 
                 {/* Takeoff Pricing Box */}
-                <div className="p-3.5 bg-[#FAF8F5] rounded border border-[#EBE4D5] flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-[10px] uppercase text-[#8C887B] block">Unit Price</span>
-                    <span className="font-mono text-sm font-semibold text-[#1E1E1C]">
-                      ${prod.pricePerUnit.toFixed(2)} / {prod.priceUnit}
-                    </span>
+                <div className="p-3.5 bg-[#FAF8F5] rounded border border-[#EBE4D5] space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-[10px] uppercase text-[#8C887B] block">Unit Price</span>
+                      <span className="font-mono text-sm font-semibold text-[#1E1E1C]">
+                        ${prod.pricePerUnit.toFixed(2)} / {prod.priceUnit}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] uppercase text-[#8C887B] block">
+                        Order: {packagesNeeded} {prod.priceUnit === 'gallon' ? 'Containers' : 'Boxes'}
+                      </span>
+                      <span className="font-mono text-base font-bold text-[#1E1E1C]">
+                        ${cost.toLocaleString()}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase text-[#8C887B] block">Est. Surface Package ({unitsNeeded} units)</span>
-                    <span className="font-mono text-base font-bold text-[#1E1E1C]">
-                      ${cost.toLocaleString()}
+
+                  <div className="flex justify-between text-[11px] text-[#706E66] pt-1.5 border-t border-[#EAE3D2]">
+                    <span>Purchased Coverage:</span>
+                    <span className="font-mono font-medium text-[#1E1E1C]">
+                      {purchasedCoverage} sq ft ({purchasedCoverage > requiredCoverageSqFt ? `+${(purchasedCoverage - requiredCoverageSqFt).toFixed(1)} sq ft surplus` : 'exact'})
                     </span>
                   </div>
                 </div>
@@ -311,10 +415,10 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
                   {isSelected ? (
                     <>
                       <Check className="w-3.5 h-3.5" />
-                      <span>Active for Project</span>
+                      <span>Active for Room</span>
                     </>
                   ) : (
-                    <span>Select for Project</span>
+                    <span>Select for Room</span>
                   )}
                 </button>
 
@@ -326,7 +430,7 @@ export const MaterialDiscoveryPanel: React.FC<MaterialDiscoveryPanelProps> = ({
                   >
                     <Package className="w-3.5 h-3.5" />
                     <span>
-                      {sampleOrderedSku === prod.sku ? 'Sample Added' : 'Order Sample'}
+                      {sampleOrderedSku === prod.sku ? 'Sample Queued' : 'Order Sample'}
                     </span>
                   </button>
                 )}
